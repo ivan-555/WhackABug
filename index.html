@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WHACK A BUG</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪲</text></svg>"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- MUTE BUTTON -->
+    <button id="mute-btn" title="Toggle Sound">🔊</button>
+
+    <!-- CUSTOM HAMMER -->
+    <svg id="hammer" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <!-- Handle -->
+      <rect
+        x="44"
+        y="50"
+        width="12"
+        height="48"
+        rx="4"
+        fill="#8B4513"
+        stroke="#5C2E0A"
+        stroke-width="2"
+      />
+      <rect
+        x="46"
+        y="52"
+        width="4"
+        height="44"
+        rx="2"
+        fill="#A0522D"
+        opacity="0.5"
+      />
+      <!-- Hammer Head -->
+      <rect
+        x="15"
+        y="10"
+        width="70"
+        height="44"
+        rx="6"
+        fill="#666"
+        stroke="#444"
+        stroke-width="3"
+      />
+      <!-- Metal shine -->
+      <rect
+        x="18"
+        y="13"
+        width="64"
+        height="10"
+        rx="3"
+        fill="#888"
+        opacity="0.6"
+      />
+      <!-- Impact face (bottom of head) -->
+      <rect
+        x="15"
+        y="44"
+        width="70"
+        height="10"
+        rx="3"
+        fill="#555"
+        stroke="#333"
+        stroke-width="2"
+      />
+      <!-- Bolts -->
+      <circle
+        cx="25"
+        cy="32"
+        r="4"
+        fill="#444"
+        stroke="#333"
+        stroke-width="1.5"
+      />
+      <circle
+        cx="75"
+        cy="32"
+        r="4"
+        fill="#444"
+        stroke="#333"
+        stroke-width="1.5"
+      />
+      <!-- RAGE text on hammer -->
+      <text
+        x="50"
+        y="36"
+        text-anchor="middle"
+        fill="#e94560"
+        font-size="11"
+        font-weight="bold"
+        font-family="monospace"
+      >
+        RAGE
+      </text>
+    </svg>
+
+    <div id="game-container">
+      <!-- HUD -->
+      <div id="header">
+        <h1>WHACK-A-BUG</h1>
+        <p class="subtitle">// TODO: fix production... or just SMASH it</p>
+      </div>
+
+      <div id="hud">
+        <div class="hud-item">SCORE: <span id="score">0</span></div>
+        <div class="hud-item" id="combo-display">x1</div>
+        <div class="hud-item">TIME: <span id="timer">30</span>s</div>
+        <div class="hud-item">HIGH SCORE: <span id="high-score">0</span></div>
+      </div>
+
+      <!-- GAME BOARD -->
+      <div id="board">
+        <div class="hole" data-index="0"><div class="bug"></div></div>
+        <div class="hole" data-index="1"><div class="bug"></div></div>
+        <div class="hole" data-index="2"><div class="bug"></div></div>
+        <div class="hole" data-index="3"><div class="bug"></div></div>
+        <div class="hole" data-index="4"><div class="bug"></div></div>
+        <div class="hole" data-index="5"><div class="bug"></div></div>
+        <div class="hole" data-index="6"><div class="bug"></div></div>
+        <div class="hole" data-index="7"><div class="bug"></div></div>
+        <div class="hole" data-index="8"><div class="bug"></div></div>
+      </div>
+
+      <!-- RAGE METER -->
+      <div id="rage-meter"><div id="rage-fill"></div></div>
+      <div id="rage-label">RAGE METER</div>
+    </div>
+
+    <!-- START OVERLAY -->
+    <div class="overlay" id="start-screen">
+      <h2>WHACK-A-BUG</h2>
+      <p>Production is on fire. Bugs everywhere.</p>
+      <p>You have 30 seconds. DESTROY THEM ALL.</p>
+      <p style="color: #e94560; margin-top: 15px; font-size: 0.9rem">
+        // click the bugs. don't miss. build combo. unleash RAGE.
+      </p>
+      <br />
+      <button class="btn" id="start-btn">
+        SMASH BUGS <span class="btn-arrow">→</span>
+      </button>
+    </div>
+
+    <!-- END OVERLAY -->
+    <div class="overlay" id="end-screen" style="display: none">
+      <h2>SPRINT COMPLETE</h2>
+      <p>Bugs squashed this sprint:</p>
+      <div class="final-score" id="final-score">0</div>
+      <div class="high-score" id="final-high-score">🏆 HIGH SCORE: 0</div>
+      <p id="end-message" style="color: #e94560; margin-bottom: 20px"></p>
+      <button class="btn" id="restart-btn">
+        RAGE AGAIN <span class="btn-arrow">→</span>
+      </button>
+    </div>
+
+    <script>
+      // === GAME STATE ===
+      const state = {
+        score: 0,
+        combo: 0,
+        timeLeft: 30,
+        isPlaying: false,
+        highScore: parseInt(localStorage.getItem("whackabug-highscore") || "0"),
+        rageLevel: 0,
+        rageMode: false,
+        activeBugs: new Set(),
+        spawnInterval: null,
+        timerInterval: null,
+      };
+
+      // === BUG DEFINITION ===
+      const BUG_SVG = `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" class="bug-icon">
+        <ellipse cx="256" cy="340" rx="145" ry="165" fill="#2d2d2d"/>
+        <rect x="256" y="175" width="1" height="330" fill="#111" opacity="0.3"/>
+        <ellipse cx="256" cy="340" rx="145" ry="165" fill="url(#bugSplit)"/>
+        <ellipse cx="256" cy="190" rx="95" ry="85" fill="#1a1a1a"/>
+        <ellipse cx="256" cy="190" rx="95" ry="85" fill="url(#headSplit)"/>
+        <circle cx="220" cy="320" r="12" fill="#555" opacity="0.6"/>
+        <circle cx="290" cy="320" r="12" fill="#555" opacity="0.5"/>
+        <circle cx="220" cy="390" r="12" fill="#555" opacity="0.6"/>
+        <circle cx="290" cy="390" r="12" fill="#555" opacity="0.5"/>
+        <circle cx="256" cy="120" r="22" fill="#1a1a1a"/>
+        <line x1="240" y1="100" x2="225" y2="60" stroke="#1a1a1a" stroke-width="10" stroke-linecap="round"/>
+        <line x1="272" y1="100" x2="287" y2="60" stroke="#1a1a1a" stroke-width="10" stroke-linecap="round"/>
+        <line x1="120" y1="250" x2="70" y2="220" stroke="#1a1a1a" stroke-width="12" stroke-linecap="round"/>
+        <line x1="392" y1="250" x2="442" y2="220" stroke="#1a1a1a" stroke-width="12" stroke-linecap="round"/>
+        <line x1="112" y1="350" x2="60" y2="370" stroke="#1a1a1a" stroke-width="12" stroke-linecap="round"/>
+        <line x1="400" y1="350" x2="452" y2="370" stroke="#1a1a1a" stroke-width="12" stroke-linecap="round"/>
+        <line x1="125" y1="440" x2="80" y2="480" stroke="#1a1a1a" stroke-width="12" stroke-linecap="round"/>
+        <line x1="387" y1="440" x2="432" y2="480" stroke="#1a1a1a" stroke-width="12" stroke-linecap="round"/>
+        <defs>
+          <linearGradient id="bugSplit" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="50%" stop-color="transparent"/>
+            <stop offset="50%" stop-color="rgba(0,0,0,0.2)"/>
+          </linearGradient>
+          <linearGradient id="headSplit" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="50%" stop-color="transparent"/>
+            <stop offset="50%" stop-color="rgba(0,0,0,0.2)"/>
+          </linearGradient>
+        </defs>
+      </svg>`;
+
+      // === DOM REFS ===
+      const hammer = document.getElementById("hammer");
+      const board = document.getElementById("board");
+      const muteBtn = document.getElementById("mute-btn");
+      const scoreEl = document.getElementById("score");
+      const timerEl = document.getElementById("timer");
+      const highScoreEl = document.getElementById("high-score");
+      const comboEl = document.getElementById("combo-display");
+      const rageFill = document.getElementById("rage-fill");
+      const startScreen = document.getElementById("start-screen");
+      const endScreen = document.getElementById("end-screen");
+      const gameContainer = document.getElementById("game-container");
+      const holes = document.querySelectorAll(".hole");
+
+      // === AUDIO ENGINE (Web Audio API) ===
+      let audioCtx = null;
+      let muted = false;
+
+      function getAudioCtx() {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return audioCtx;
+      }
+
+      function playHitSound() {
+        if (muted) return;
+        const ctx = getAudioCtx();
+        const now = ctx.currentTime;
+
+        // Heavy impact noise burst
+        const bufferSize = ctx.sampleRate * 0.15;
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 3);
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        // Low thump
+        const osc = ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(80, now);
+        osc.frequency.exponentialRampToValueAtTime(20, now + 0.15);
+
+        const gainNoise = ctx.createGain();
+        gainNoise.gain.setValueAtTime(0.8, now);
+        gainNoise.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+        const gainOsc = ctx.createGain();
+        gainOsc.gain.setValueAtTime(0.6, now);
+        gainOsc.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+        // Distortion for extra crunch
+        const distortion = ctx.createWaveShaper();
+        const curve = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+          const x = (i * 2) / 256 - 1;
+          curve[i] = ((Math.PI + 100) * x) / (Math.PI + 100 * Math.abs(x));
+        }
+        distortion.curve = curve;
+
+        noise.connect(gainNoise).connect(distortion).connect(ctx.destination);
+        osc.connect(gainOsc).connect(ctx.destination);
+
+        noise.start(now);
+        noise.stop(now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      }
+
+      function playMissSound() {
+        if (muted) return;
+        const ctx = getAudioCtx();
+        const now = ctx.currentTime;
+
+        const osc = ctx.createOscillator();
+        osc.type = "square";
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.exponentialRampToValueAtTime(50, now + 0.2);
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      }
+
+      function playComboSound(combo) {
+        if (muted) return;
+        const ctx = getAudioCtx();
+        const now = ctx.currentTime;
+        const freq = 300 + combo * 50;
+
+        const osc = ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, now);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + 0.1);
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.15);
+      }
+
+      function playRageModeSound() {
+        if (muted) return;
+        const ctx = getAudioCtx();
+        const now = ctx.currentTime;
+
+        for (let i = 0; i < 5; i++) {
+          const osc = ctx.createOscillator();
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(100 + i * 80, now + i * 0.05);
+          osc.frequency.exponentialRampToValueAtTime(
+            500 + i * 100,
+            now + i * 0.05 + 0.1,
+          );
+
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.15, now + i * 0.05);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.15);
+
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(now + i * 0.05);
+          osc.stop(now + i * 0.05 + 0.15);
+        }
+      }
+
+      // === HAMMER MOVEMENT ===
+      document.addEventListener("mousemove", (e) => {
+        hammer.style.left = e.clientX + "px";
+        hammer.style.top = e.clientY + "px";
+      });
+
+      // === HAMMER SMASH ANIMATION ===
+      function smashHammer() {
+        hammer.classList.add("smashing");
+        setTimeout(() => hammer.classList.remove("smashing"), 100);
+      }
+
+      // === SCREEN SHAKE ===
+      function screenShake() {
+        gameContainer.classList.add("screen-shake");
+        setTimeout(() => gameContainer.classList.remove("screen-shake"), 150);
+      }
+
+      // === SPAWN PARTICLES ===
+      function spawnParticles(x, y) {
+        const particles = ["💥", "✨", "⚡", "🔥", "💢", "☄️", "🌟"];
+        const count = state.rageMode ? 15 : 8;
+
+        for (let i = 0; i < count; i++) {
+          const particle = document.createElement("div");
+          particle.className = "particle";
+          particle.textContent =
+            particles[Math.floor(Math.random() * particles.length)];
+          particle.style.left = x + "px";
+          particle.style.top = y + "px";
+          particle.style.fontSize = Math.random() * 20 + 15 + "px";
+
+          const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
+          const distance = 60 + Math.random() * 100;
+          particle.style.setProperty("--tx", Math.cos(angle) * distance + "px");
+          particle.style.setProperty("--ty", Math.sin(angle) * distance + "px");
+          particle.style.setProperty("--tr", Math.random() * 720 - 360 + "deg");
+
+          document.body.appendChild(particle);
+          setTimeout(() => particle.remove(), 800);
+        }
+      }
+
+      // === IMPACT RING ===
+      function spawnImpactRing(x, y) {
+        const ring = document.createElement("div");
+        ring.className = "impact-ring";
+        ring.style.left = x + "px";
+        ring.style.top = y + "px";
+        document.body.appendChild(ring);
+        setTimeout(() => ring.remove(), 400);
+      }
+
+      // === SCORE POPUP ===
+      function spawnScorePopup(x, y, points) {
+        const popup = document.createElement("div");
+        popup.className = "score-popup";
+        popup.textContent = "+" + points;
+        popup.style.left = x + "px";
+        popup.style.top = y - 30 + "px";
+
+        if (state.combo > 3) {
+          popup.style.fontSize = "3rem";
+          popup.style.color = "#ff6b6b";
+        }
+
+        document.body.appendChild(popup);
+        setTimeout(() => popup.remove(), 1000);
+      }
+
+      // === MISS INDICATOR ===
+      function spawnMissIndicator(x, y) {
+        const miss = document.createElement("div");
+        miss.className = "miss-x";
+        miss.textContent = "MISS";
+        miss.style.left = x + "px";
+        miss.style.top = y + "px";
+        document.body.appendChild(miss);
+        setTimeout(() => miss.remove(), 600);
+      }
+
+      // === HIT FLASH ON HOLE ===
+      function flashHole(hole) {
+        const flash = document.createElement("div");
+        flash.className = "hit-flash";
+        hole.appendChild(flash);
+        setTimeout(() => flash.remove(), 300);
+      }
+
+      // === SPAWN BUG ===
+      function spawnBug() {
+        const available = [];
+        holes.forEach((hole, i) => {
+          if (!state.activeBugs.has(i)) available.push(i);
+        });
+
+        if (available.length === 0) return;
+
+        const idx = available[Math.floor(Math.random() * available.length)];
+        const hole = holes[idx];
+        const bug = hole.querySelector(".bug");
+
+        bug.className = "bug bug-generic active";
+        bug.innerHTML = BUG_SVG;
+        bug.dataset.active = "true";
+        state.activeBugs.add(idx);
+
+        // Bug hides after a while (faster as time decreases)
+        const hideTime = Math.max(600, 1500 - (30 - state.timeLeft) * 30);
+        const hideTimeout = setTimeout(() => {
+          if (bug.dataset.active === "true") {
+            bug.dataset.active = "false";
+            bug.classList.remove("active");
+            state.activeBugs.delete(idx);
+            // Reset combo on miss (bug escaped)
+            if (state.isPlaying) {
+              state.combo = 0;
+              updateCombo();
+            }
+          }
+        }, hideTime);
+
+        bug.dataset.hideTimeout = hideTimeout;
+      }
+
+      // === HIT BUG ===
+      function hitBug(hole, idx, x, y) {
+        const bug = hole.querySelector(".bug");
+        if (bug.dataset.active !== "true") return;
+
+        bug.dataset.active = "false";
+        clearTimeout(parseInt(bug.dataset.hideTimeout));
+        state.activeBugs.delete(idx);
+
+        // Score: simple +1 per bug
+        state.combo++;
+        state.score += 1;
+
+        // Rage meter
+        state.rageLevel = Math.min(100, state.rageLevel + 8);
+        if (state.rageLevel >= 100 && !state.rageMode) {
+          activateRageMode();
+        }
+
+        // Update UI
+        scoreEl.textContent = state.score;
+        updateCombo();
+        rageFill.style.width = state.rageLevel + "%";
+
+        // EFFECTS - MAKE IT FEEL HUGE
+        bug.classList.add("hit");
+        smashHammer();
+        screenShake();
+        flashHole(hole);
+        spawnParticles(x, y);
+        spawnImpactRing(x, y);
+        spawnScorePopup(x, y, 1);
+        playHitSound();
+
+        if (state.combo > 1) {
+          playComboSound(state.combo);
+        }
+
+        // Clean up bug after animation
+        setTimeout(() => {
+          bug.className = "bug";
+          bug.innerHTML = "";
+        }, 300);
+      }
+
+      // === COMBO DISPLAY ===
+      function updateCombo() {
+        if (state.combo <= 1) {
+          comboEl.textContent = "x1";
+          comboEl.style.color = "#ffdd57";
+          comboEl.style.fontSize = "1.1rem";
+        } else if (state.combo < 5) {
+          comboEl.textContent = `x${state.combo} COMBO`;
+          comboEl.style.color = "#feca57";
+          comboEl.style.fontSize = "1.2rem";
+        } else if (state.combo < 10) {
+          comboEl.textContent = `🔥 x${state.combo} FIRE`;
+          comboEl.style.color = "#ff6b6b";
+          comboEl.style.fontSize = "1.4rem";
+        } else {
+          comboEl.textContent = `💀 x${state.combo} GODLIKE`;
+          comboEl.style.color = "#a855f7";
+          comboEl.style.fontSize = "1.6rem";
+        }
+      }
+
+      // === RAGE MODE ===
+      function activateRageMode() {
+        state.rageMode = true;
+        document.body.classList.add("rage-mode");
+        playRageModeSound();
+
+        // Rage mode: bugs spawn faster, more points
+        clearInterval(state.spawnInterval);
+        state.spawnInterval = setInterval(spawnBug, 300);
+
+        // Sometimes spawn 2 at once
+        const doubleSpawn = setInterval(() => {
+          if (state.rageMode && state.isPlaying) spawnBug();
+        }, 500);
+
+        // Rage mode lasts 5 seconds
+        setTimeout(() => {
+          state.rageMode = false;
+          state.rageLevel = 0;
+          rageFill.style.width = "0%";
+          document.body.classList.remove("rage-mode");
+          clearInterval(doubleSpawn);
+          if (state.isPlaying) {
+            clearInterval(state.spawnInterval);
+            const interval = Math.max(400, 1000 - (30 - state.timeLeft) * 20);
+            state.spawnInterval = setInterval(spawnBug, interval);
+          }
+        }, 5000);
+      }
+
+      // === CLICK HANDLER ===
+      document.addEventListener("mousedown", (e) => {
+        if (!state.isPlaying) return;
+
+        smashHammer();
+
+        // Check if we hit a bug
+        const target = e.target.closest(".hole");
+        if (target) {
+          const idx = parseInt(target.dataset.index);
+          const bug = target.querySelector(".bug");
+          if (bug.dataset.active === "true") {
+            hitBug(target, idx, e.clientX, e.clientY);
+            return;
+          }
+        }
+
+        // MISS!
+        state.combo = 0;
+        updateCombo();
+        state.rageLevel = Math.max(0, state.rageLevel - 5);
+        rageFill.style.width = state.rageLevel + "%";
+        spawnMissIndicator(e.clientX, e.clientY);
+        playMissSound();
+      });
+
+      // === GAME TIMER ===
+      function startTimer() {
+        state.timerInterval = setInterval(() => {
+          state.timeLeft--;
+          timerEl.textContent = state.timeLeft;
+
+          if (state.timeLeft <= 10) {
+            timerEl.style.color = "#e94560";
+          }
+
+          if (state.timeLeft <= 0) {
+            endGame();
+          }
+        }, 1000);
+      }
+
+      // === START GAME ===
+      function startGame() {
+        state.score = 0;
+        state.combo = 0;
+        state.timeLeft = 30;
+        state.isPlaying = true;
+        state.rageLevel = 0;
+        state.rageMode = false;
+        state.activeBugs.clear();
+
+        scoreEl.textContent = "0";
+        timerEl.textContent = "30";
+        timerEl.style.color = "#53f";
+        highScoreEl.textContent = state.highScore;
+        rageFill.style.width = "0%";
+        comboEl.textContent = "x1";
+        document.body.classList.remove("rage-mode");
+
+        // Clear any remaining bugs
+        holes.forEach((hole) => {
+          const bug = hole.querySelector(".bug");
+          bug.className = "bug";
+          bug.innerHTML = "";
+          bug.dataset.active = "false";
+        });
+
+        startScreen.style.display = "none";
+        endScreen.style.display = "none";
+
+        startTimer();
+
+        // Spawn bugs - starts moderate, speeds up
+        state.spawnInterval = setInterval(spawnBug, 900);
+
+        // Gradually increase speed
+        const speedUp = setInterval(() => {
+          if (!state.isPlaying) {
+            clearInterval(speedUp);
+            return;
+          }
+          clearInterval(state.spawnInterval);
+          const interval = Math.max(400, 900 - (30 - state.timeLeft) * 20);
+          state.spawnInterval = setInterval(spawnBug, interval);
+        }, 3000);
+      }
+
+      // === END GAME ===
+      function endGame() {
+        state.isPlaying = false;
+        clearInterval(state.spawnInterval);
+        clearInterval(state.timerInterval);
+
+        // Update high score
+        if (state.score > state.highScore) {
+          state.highScore = state.score;
+          localStorage.setItem(
+            "whackabug-highscore",
+            state.highScore.toString(),
+          );
+        }
+
+        // End messages
+        const messages = [
+          { min: 0, msg: "Did you even try? Production is still burning. 🔥" },
+          { min: 10, msg: "Junior dev energy. Keep smashing. 💪" },
+          { min: 20, msg: "Solid sprint! Most bugs eliminated. 🎯" },
+          { min: 35, msg: "Senior engineer vibes. Bugs fear you. 😈" },
+          { min: 50, msg: "You ARE the CI/CD pipeline. UNSTOPPABLE. 🚀" },
+          {
+            min: 70,
+            msg: "God-tier. You fixed production with pure rage. ☠️",
+          },
+        ];
+
+        let endMsg = messages[0].msg;
+        for (const m of messages) {
+          if (state.score >= m.min) endMsg = m.msg;
+        }
+
+        document.getElementById("final-score").textContent = state.score;
+        document.getElementById("final-high-score").textContent =
+          "🏆 HIGH SCORE: " + state.highScore;
+        document.getElementById("end-message").textContent = endMsg;
+        endScreen.style.display = "flex";
+
+        // Clear board
+        document.body.classList.remove("rage-mode");
+        holes.forEach((hole) => {
+          const bug = hole.querySelector(".bug");
+          bug.className = "bug";
+          bug.innerHTML = "";
+          bug.dataset.active = "false";
+        });
+      }
+
+      // === EVENT LISTENERS ===
+      document.getElementById("start-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        startGame();
+      });
+
+      document.getElementById("restart-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        startGame();
+      });
+
+      // === MUTE TOGGLE ===
+      muteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        muted = !muted;
+        muteBtn.textContent = muted ? "🔇" : "🔊";
+        muteBtn.classList.toggle("muted", muted);
+      });
+
+      // Init high score display
+      highScoreEl.textContent = state.highScore;
+    </script>
+
+    <div id="powered-by">
+      powered by<br />
+      <span class="rg">Re:Guest</span> <span class="zp">Zeppelin</span>
+    </div>
+  </body>
+</html>
